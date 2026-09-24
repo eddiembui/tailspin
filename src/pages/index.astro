@@ -4,11 +4,15 @@ import GameCard from '../components/GameCard.astro';
 import PageHero from '../components/PageHero.astro';
 import EmptyState from '../components/EmptyState.astro';
 import { getDatabase } from '../lib/db';
-import { getAllGames } from '../lib/games';
+import { getAllCategories, getAllGames, getAllPublishers } from '../lib/games';
 
 export const prerender = true;
 
+const categories = await getAllCategories(getDatabase());
+const publishers = await getAllPublishers(getDatabase());
 const games = await getAllGames(getDatabase());
+
+const categoryButtonId = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 ---
 
 <Layout title="Tailspin Toys - Crowdfunding your new favorite game!">
@@ -18,8 +22,64 @@ const games = await getAllGames(getDatabase());
       subtitle="Find your next game! And maybe even back one! Explore our collection!"
     />
 
+    <section
+      aria-label="Filter the game list"
+      class="mb-8 rounded-2xl border border-slate-700 bg-slate-800/60 p-5 shadow-lg"
+    >
+      <div class="flex flex-col gap-5 lg:flex-row lg:items-end">
+        <fieldset class="flex-1">
+          <legend class="mb-3 text-sm font-medium text-slate-200">Filter by category</legend>
+          <div class="flex flex-wrap gap-3" data-testid="category-filter-group">
+            {categories.map((category) => (
+              <label
+                for={categoryButtonId(category.name)}
+                class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-200 transition-colors hover:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500"
+              >
+                <input
+                  id={categoryButtonId(category.name)}
+                  type="checkbox"
+                  value={category.name}
+                  data-testid={`category-filter-${categoryButtonId(category.name)}`}
+                  class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-slate-900"
+                />
+                <span>{category.name}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div class="w-full lg:max-w-xs">
+          <label for="publisher-filter" class="mb-2 block text-sm font-medium text-slate-200">Filter by publisher</label>
+          <select
+            id="publisher-filter"
+            data-testid="publisher-filter"
+            class="w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All publishers</option>
+            {publishers.map((publisher) => <option value={publisher.name}>{publisher.name}</option>)}
+          </select>
+        </div>
+
+        <button
+          type="button"
+          data-testid="clear-filters-button"
+          class="rounded-xl border border-slate-600 bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-100 transition-colors hover:border-blue-500 hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          Clear filters
+        </button>
+      </div>
+
+      <p class="mt-4 text-sm text-slate-300" data-testid="games-results-summary" aria-live="polite">
+        Showing all {games.length} games
+      </p>
+    </section>
+
     <div>
       <h2 class="text-2xl font-medium mb-6 text-slate-100">Featured Games</h2>
+
+      <div id="games-empty-state" hidden data-testid="games-empty-state">
+        <EmptyState text="No games match your selected filters." />
+      </div>
 
       {games.length === 0 ? (
         <EmptyState text="No games available at the moment." />
@@ -30,4 +90,68 @@ const games = await getAllGames(getDatabase());
       )}
     </div>
   </div>
+
+  <script>
+    const categoryInputs = Array.from(
+      document.querySelectorAll<HTMLInputElement>('[data-testid^="category-filter-"]'),
+    );
+    const publisherSelect = document.querySelector<HTMLSelectElement>('[data-testid="publisher-filter"]');
+    const clearFiltersButton = document.querySelector<HTMLButtonElement>('[data-testid="clear-filters-button"]');
+    const gamesGrid = document.querySelector<HTMLElement>('[data-testid="games-grid"]');
+    const emptyState = document.querySelector<HTMLElement>('[data-testid="games-empty-state"]');
+    const resultsSummary = document.querySelector<HTMLElement>('[data-testid="games-results-summary"]');
+    const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="game-card"]'));
+
+    const syncResults = () => {
+      const selectedCategories = new Set(
+        categoryInputs.filter((input) => input.checked).map((input) => input.value),
+      );
+      const selectedPublisher = publisherSelect?.value || '';
+
+      let visibleCount = 0;
+
+      cards.forEach((card) => {
+        const cardCategory = card.getAttribute('data-game-category') || '';
+        const cardPublisher = card.getAttribute('data-game-publisher') || '';
+        const matchesCategory = selectedCategories.size === 0 || selectedCategories.has(cardCategory);
+        const matchesPublisher = selectedPublisher === '' || cardPublisher === selectedPublisher;
+        const isVisible = matchesCategory && matchesPublisher;
+
+        card.hidden = !isVisible;
+        if (isVisible) {
+          visibleCount += 1;
+        }
+      });
+
+      if (gamesGrid) {
+        gamesGrid.hidden = visibleCount === 0;
+      }
+
+      if (emptyState) {
+        emptyState.hidden = visibleCount !== 0;
+      }
+
+      if (resultsSummary) {
+        resultsSummary.textContent =
+          visibleCount === cards.length
+            ? `Showing all ${visibleCount} games`
+            : `Showing ${visibleCount} of ${cards.length} games`;
+      }
+    };
+
+    categoryInputs.forEach((input) => input.addEventListener('change', syncResults));
+    publisherSelect?.addEventListener('change', syncResults);
+
+    clearFiltersButton?.addEventListener('click', () => {
+      categoryInputs.forEach((input) => {
+        input.checked = false;
+      });
+      if (publisherSelect) {
+        publisherSelect.value = '';
+      }
+      syncResults();
+    });
+
+    syncResults();
+  </script>
 </Layout>
