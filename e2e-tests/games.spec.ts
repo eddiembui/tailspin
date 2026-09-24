@@ -1,6 +1,36 @@
 import { test, expect, type Response } from '@playwright/test';
 
 test.describe('Game Listing and Navigation', () => {
+  test('should filter games by category and publisher', async ({ page }) => {
+    await test.step('Navigate to homepage', async () => {
+      await page.goto('/');
+      await expect(page.getByTestId('games-grid')).toBeVisible();
+    });
+
+    await test.step('Filter by Strategy category', async () => {
+      await page.getByTestId('category-filter-strategy').check();
+      await expect(page.getByTestId('games-grid')).toBeVisible();
+      await expect(page.getByTestId('games-results-summary')).toContainText('Showing');
+    });
+
+    await test.step('Filter by a specific publisher', async () => {
+      await page.getByTestId('publisher-filter').selectOption({ label: 'CodeForge Studios' });
+      await expect(page.getByTestId('games-grid')).toBeVisible();
+    });
+
+    await test.step('Combine category and publisher filters', async () => {
+      const visibleGames = page.getByTestId('game-card');
+      await expect(visibleGames.first()).toBeVisible();
+      expect(await visibleGames.count()).toBeGreaterThan(0);
+    });
+
+    await test.step('Clear filters to restore all games', async () => {
+      await page.getByTestId('clear-filters-button').click();
+      await expect(page.getByTestId('publisher-filter')).toHaveValue('');
+      await expect(page.getByTestId('games-grid')).toBeVisible();
+    });
+  });
+
   test('should display games with titles on index page', async ({ page }) => {
     await test.step('Navigate to homepage', async () => {
       await page.goto('/');
